@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"entware-manager/internal/auth"
@@ -285,5 +286,42 @@ func TestProxyRDPPingOpen(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("GET /rdp/ без сессии = %d, want 401 (клиент остаётся под гейтом)", resp.StatusCode)
+	}
+}
+
+// WASM-клиент RDP отдаётся как статика панели и в go-режиме
+// (паритет с lighttpd-режимом, где alias раздаёт всё кроме deny-расширений).
+// Посторонние файлы рядом с клиентом по-прежнему 404.
+func TestStaticWhitelistRDP(t *testing.T) {
+	webRoot = t.TempDir() + "/web"
+	os.MkdirAll(filepath.Join(webRoot, "static/rdp"), 0755)
+	for _, f := range []string{"index.html", "main.wasm", "wasm_exec.js"} {
+		if err := os.WriteFile(filepath.Join(webRoot, "static/rdp", f), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	defer func() { webRoot = "/opt/web_entware" }()
+
+	h := NewHandler()
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	for _, p := range []string{"/entware-manager/static/rdp/index.html", "/entware-manager/static/rdp/", "/entware-manager/static/rdp/main.wasm", "/entware-manager/static/rdp/wasm_exec.js"} {
+		resp, err := http.Get(srv.URL + p)
+		if err != nil {
+			t.Fatalf("GET %s: %v", p, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("GET %s = %d, want 200 (WASM-клиент RDP в whitelist)", p, resp.StatusCode)
+		}
+	}
+	resp, err := http.Get(srv.URL + "/entware-manager/static/rdp/evil.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("GET /entware-manager/static/rdp/evil.sh = %d, want 404 (whitelist enforced)", resp.StatusCode)
 	}
 }

@@ -30,6 +30,9 @@ var staticWhitelist = map[string]bool{
 	"/menu/menu.json":             true,
 	"/logger/system_sources.json": true,
 	"/logger/style.css":           true,
+	"/static/rdp/index.html":      true,
+	"/static/rdp/main.wasm":       true,
+	"/static/rdp/wasm_exec.js":    true,
 }
 
 // handleStatic отдаёт файлы из белого списка под /entware-manager/.
@@ -43,6 +46,12 @@ func handleStatic(w http.ResponseWriter, r *http.Request) {
 		p = "/index.html"
 	}
 	clean := path.Clean(p)
+	// Каталог RDP-клиента отдаём как index.html: http.ServeFile сам
+	// редиректит */index.html → */ (301), а голый */ без этой подмены
+	// дал бы 404 (в whitelist только файлы).
+	if clean == "/static/rdp" {
+		clean = "/static/rdp/index.html"
+	}
 	if !staticWhitelist[clean] {
 		http.NotFound(w, r)
 		return

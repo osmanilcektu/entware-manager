@@ -2,6 +2,15 @@
 
 Правила проекта: [`RULES.md`](../RULES.md)
 
+## 1.16.29 (2026-09-06)
+
+### RDP: форк переехал в корень проекта + статика клиента в go-режиме
+
+- Форк grdpwasm переехал из `/tmp/opencode/grdpwasm` в `grdpwasm/` (корень проекта): дефолт `GRDP_FORK` в `build-deploy.sh` теперь `$PROJECT_DIR/grdpwasm` (машинно-независимо, без прав root); `grdpwasm` добавлен в исключения сборки — иначе 11 МБ форка с `.git` попали бы в `deploy/` → в tar.gz/ipk; `.gitignore` — правило `/grdpwasm/`; пути обновлены в `doc/RDP_MODULE.md` и скиллах `ewm-rdp-client`/`ewm-frontend-deploy`.
+- Причина: дефолт `/opt/tmp/grdpwasm` не существовал нигде — сборка молча пропускала RDP-артефакты (`WARNING: форк grdpwasm не найден`), на роутере оставалась пустая `static/rdp/`.
+- `go/internal/server/static.go`: в whitelist go-режима добавлены `/static/rdp/index.html`, `/static/rdp/main.wasm`, `/static/rdp/wasm_exec.js` (+ каталог `/static/rdp` → `index.html`, т.к. `http.ServeFile` редиректит `*/index.html → */`). Без этого в go-режиме клиент отдавал 404 (в lighttpd-режиме alias раздавал всё). Добавлен тест `TestStaticWhitelistRDP` (200 на файлы и каталог, 404 на посторонний файл рядом).
+- Проверено: `make ci` PASS; `make deploy` — секция `=== RDP-артефакты ===` без WARNING, `diff` форк ≡ `deploy/static/rdp/index.html` пуст, `deploy/grdpwasm` отсутствует; на dev-роутере (go-режим): залиты 3 файла статики + пересобранный `entware-server` (md5 сошлись), `main.wasm`/`wasm_exec.js`/`static/rdp/` → 200, `index.html` → 301→200 (норма `ServeFile`, как у панели); версия 1.16.28 = local; grdp-proxy alive (port 19099); `/rdp/` → 401 без сессии (authGate, by design).
+
 ## 1.16.28 (2026-09-04)
 
 ### Чистая сборка: без локальных путей в бинарниках

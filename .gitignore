@@ -9,9 +9,11 @@ tmp/
 .DS_Store
 cgi-bin/go/
 
-# Внешний форк grdpwasm (static/rdp/, ~10+ МБ WASM) — артефакт поставки,
-# не должен попадать в git. Сборка/деплой из /opt/tmp/grdpwasm.
+# Внешний форк grdpwasm (grdpwasm/, ~11 МБ с WASM) — артефакт поставки,
+# не должен попадать в git. Сборка/деплой из $PROJECT_DIR/grdpwasm.
+# (форк — отдельный git-репозиторий со своими правками клиента)
 static/
+/grdpwasm/
 
 RULES.md
 

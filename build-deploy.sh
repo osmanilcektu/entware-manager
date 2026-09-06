@@ -36,7 +36,7 @@ echo "=== Сборка deploy ==="
 for f in "$PROJECT_DIR"/*; do
     name=$(basename "$f")
     case "$name" in
-        deploy|go|tmp|test|dist|build-deploy.sh|Makefile|build-ipk.sh|forum_post.md|TECH_SPEC.md|RULES.md|links.json|DEVLOG.md|DEVICE.md|BUILD.md|router_backup|conffiles|control|postinst|prerm|*_config.json|*.tar.gz|*.ipk|*.deb|opencode.json)
+        deploy|go|grdpwasm|tmp|test|dist|build-deploy.sh|Makefile|build-ipk.sh|forum_post.md|TECH_SPEC.md|RULES.md|links.json|DEVLOG.md|DEVICE.md|BUILD.md|router_backup|conffiles|control|postinst|prerm|*_config.json|*.tar.gz|*.ipk|*.deb|opencode.json)
             continue ;;
     esac
     if [ -d "$f" ]; then
@@ -112,11 +112,11 @@ fi
 
 # ==============================================
 # RDP-артефакты (WASM-клиент grdpwasm + grdp-proxy)
-# Форк grdpwasm — ВНЕ репозитория (gitignored static/), собран в /opt/tmp/grdpwasm.
+# Форк grdpwasm — ВНЕ репозитория (gitignored /grdpwasm/), лежит в корне проекта.
 # Если форк доступен — собираем grdp-proxy под каждую arch и копируем WASM-клиент.
 # Если нет — предупреждаем (RDP-вкладка будет недоступна до ручной сборки).
 # ==============================================
-GRDP_FORK="${GRDP_FORK:-/opt/tmp/grdpwasm}"
+GRDP_FORK="${GRDP_FORK:-$PROJECT_DIR/grdpwasm}"
 if [ -d "$GRDP_FORK/proxy" ] && [ -f "$GRDP_FORK/static/index.html" ]; then
     echo ""
     echo "=== RDP-артефакты (форк grdpwasm: $GRDP_FORK) ==="
