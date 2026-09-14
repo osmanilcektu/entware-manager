@@ -53,10 +53,10 @@
         var stored = readStorage(NIGHT_KEY);
         if (stored === '1') return true;
         if (stored === '0') return false;
-        // With no explicit preference, report the same automatic state that
-        // applyFromStorage() applies. This prevents choosing a color preset at
-        // night from unexpectedly switching the panel back to day mode.
-        return document.documentElement.classList.contains('night') || automaticNight();
+        // With no explicit preference, use the current automatic state. This
+        // keeps preset changes consistent and also corrects the theme if the
+        // page remained open across the day/night boundary.
+        return automaticNight();
     }
 
     function applyTheme(themeId, night) {
