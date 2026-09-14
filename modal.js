@@ -1,29 +1,35 @@
 // ==============================================
 // Entware Manager - модуль уведомлений (Modal и Toast)
 // Copyright (c) 2026 Di1r1 — https://github.com/Di1r1/entware-manager
-// Версия: 1.0
-// Дата: 2026-03-28
+// Версия: 1.1
+// Дата: 2026-09-14
 // ==============================================
 
 const Modal = {
     element: null,
     bodyElement: null,
     titleElement: null,
+    initialized: false,
 
     init() {
+        if (this.initialized) return;
         this.element = document.getElementById('infoModal');
         this.bodyElement = document.getElementById('modalBody');
         this.titleElement = document.getElementById('modalTitle');
-        const closeBtn = this.element?.querySelector('.close');
+        if (!this.element || !this.bodyElement) return;
+
+        const closeBtn = this.element.querySelector('.close');
         if (closeBtn) {
             closeBtn.onclick = () => this.hide();
         }
-        window.onclick = (event) => {
+        // Do not overwrite window.onclick: other modules may legitimately use it.
+        window.addEventListener('click', (event) => {
             if (event.target === this.element) this.hide();
-        };
+        });
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') this.hide();
         });
+        this.initialized = true;
     },
 
     show(content, isError = false, title = '') {
@@ -116,18 +122,25 @@ const Modal = {
 
 const Toast = {
     element: null,
+    hideTimer: null,
     init() {
+        if (this.element && document.body.contains(this.element)) return;
         this.element = document.createElement('div');
         this.element.id = 'toast';
         document.body.appendChild(this.element);
     },
     show(message, isError = false, duration = 3000) {
-        if (!this.element) this.init();
+        if (!this.element || !document.body.contains(this.element)) this.init();
+        if (this.hideTimer) {
+            clearTimeout(this.hideTimer);
+            this.hideTimer = null;
+        }
         this.element.textContent = message;
         this.element.style.backgroundColor = isError ? '#e53e3e' : '#2ecc71';
         this.element.style.opacity = '1';
-        setTimeout(() => {
-            this.element.style.opacity = '0';
+        this.hideTimer = setTimeout(() => {
+            if (this.element) this.element.style.opacity = '0';
+            this.hideTimer = null;
         }, duration);
     }
 };
