@@ -1,46 +1,43 @@
 // ==============================================
-// Entware Manager - модуль уведомлений (Modal и Toast)
+// Entware Manager - модуль уведомлений (Modal ve Toast)
 // Copyright (c) 2026 Di1r1 — https://github.com/Di1r1/entware-manager
-// Версия: 1.0
-// Дата: 2026-03-28
+// Sürüm: 1.1
+// Tarih: 2026-09-14
 // ==============================================
 
 const Modal = {
     element: null,
     bodyElement: null,
     titleElement: null,
+    initialized: false,
 
     init() {
+        if (this.initialized) return;
         this.element = document.getElementById('infoModal');
         this.bodyElement = document.getElementById('modalBody');
         this.titleElement = document.getElementById('modalTitle');
-        const closeBtn = this.element?.querySelector('.close');
-        if (closeBtn) {
-            closeBtn.onclick = () => this.hide();
-        }
-        window.onclick = (event) => {
+        if (!this.element || !this.bodyElement) return;
+
+        const closeBtn = this.element.querySelector('.close');
+        if (closeBtn) closeBtn.onclick = () => this.hide();
+
+        window.addEventListener('click', (event) => {
             if (event.target === this.element) this.hide();
-        };
+        });
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') this.hide();
         });
+        this.initialized = true;
     },
 
     show(content, isError = false, title = '') {
         if (!this.element || !this.bodyElement) return;
-        if (this.titleElement && title) {
-            this.titleElement.textContent = title;
-        }
-        if (isError) {
-            this.element.classList.add('error-modal');
-        } else {
-            this.element.classList.remove('error-modal');
-        }
-        if (typeof content === 'string' && content.trim().startsWith('<')) {
-            this.bodyElement.innerHTML = content;
-        } else {
-            this.bodyElement.textContent = content;
-        }
+        if (this.titleElement && title) this.titleElement.textContent = title;
+        if (isError) this.element.classList.add('error-modal');
+        else this.element.classList.remove('error-modal');
+
+        if (typeof content === 'string' && content.trim().startsWith('<')) this.bodyElement.innerHTML = content;
+        else this.bodyElement.textContent = content;
         this.element.style.display = 'block';
     },
 
@@ -60,8 +57,6 @@ const Modal = {
         this.show('<div class="loading-spinner"></div>', false, title);
     },
 
-    // Запрос пароля в скрытом поле (type=password) через модалку.
-    // onConfirm(value) вызывается со введённым паролем; '' — отмена.
     promptPassword(title, onConfirm) {
         if (!this.element || !this.bodyElement) { onConfirm(''); return; }
         if (this.titleElement) this.titleElement.textContent = title || 'Введите пароль';
@@ -83,9 +78,6 @@ const Modal = {
         var closeBtn = this.element.querySelector('.close');
         var settled = false;
 
-        // Временный обработчик клика по фону модалки (outsideClick) — снимается
-        // в done(), чтобы не ломать крестик у последующих модалок (напр. просмотра
-        // файла через Modal.info, где closeBtn.onclick из init() должен работать).
         var outsideClick = function(event) {
             if (event.target === Modal.element) done('');
         };
@@ -93,22 +85,21 @@ const Modal = {
         var done = function(val) {
             if (settled) return;
             settled = true;
-            // Восстанавливаем штатное поведение крестика (Modal.hide из init)
-            // и убираем временный слушатель фона — иначе крестик у следующих
-            // модалок остаётся привязанным к этому (уже завершённому) done.
             if (closeBtn) closeBtn.onclick = function() { Modal.hide(); };
             Modal.element.removeEventListener('click', outsideClick);
             Modal.hide();
             onConfirm(val);
         };
-        input.focus();
-        ok.onclick = function() { done(input.value); };
-        cancel.onclick = function() { done(''); };
-        input.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') { e.preventDefault(); done(input.value); }
-            if (e.key === 'Escape') { e.preventDefault(); done(''); }
-        });
-        // Закрытие через X или клик вне — тоже отмена (onConfirm('')).
+
+        if (input) input.focus();
+        if (ok) ok.onclick = function() { done(input ? input.value : ''); };
+        if (cancel) cancel.onclick = function() { done(''); };
+        if (input) {
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') { e.preventDefault(); done(input.value); }
+                if (e.key === 'Escape') { e.preventDefault(); done(''); }
+            });
+        }
         if (closeBtn) closeBtn.onclick = function() { done(''); };
         this.element.addEventListener('click', outsideClick);
     }
@@ -116,18 +107,27 @@ const Modal = {
 
 const Toast = {
     element: null,
+    hideTimer: null,
+
     init() {
+        if (this.element && document.body.contains(this.element)) return;
         this.element = document.createElement('div');
         this.element.id = 'toast';
         document.body.appendChild(this.element);
     },
+
     show(message, isError = false, duration = 3000) {
-        if (!this.element) this.init();
+        if (!this.element || !document.body.contains(this.element)) this.init();
+        if (this.hideTimer) {
+            clearTimeout(this.hideTimer);
+            this.hideTimer = null;
+        }
         this.element.textContent = message;
         this.element.style.backgroundColor = isError ? '#e53e3e' : '#2ecc71';
         this.element.style.opacity = '1';
-        setTimeout(() => {
-            this.element.style.opacity = '0';
+        this.hideTimer = setTimeout(() => {
+            if (this.element) this.element.style.opacity = '0';
+            this.hideTimer = null;
         }, duration);
     }
 };
