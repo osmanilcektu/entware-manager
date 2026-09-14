@@ -18,12 +18,13 @@
     };
     const TRANSLATABLE_ATTRIBUTES = ['title', 'placeholder', 'aria-label'];
     const CYRILLIC_RE = /[\u0400-\u04FF]/;
+    const SKIP_TEXT_TAGS = /^(SCRIPT|STYLE|NOSCRIPT|CODE|PRE)$/i;
 
     let language = DEFAULT_LANGUAGE;
     let dictionary = {};
-    let translating = false;
     const observers = new WeakMap();
     const observedFrames = new WeakSet();
+    const pendingByDocument = new WeakMap();
 
     function uiBase() {
         if (typeof window.UI_BASE === 'string' && window.UI_BASE) return window.UI_BASE;
@@ -69,7 +70,7 @@
     function translateTextNode(node) {
         if (!node || node.nodeType !== 3) return;
         const parent = node.parentElement;
-        if (parent && /^(SCRIPT|STYLE|NOSCRIPT)$/i.test(parent.tagName)) return;
+        if (parent && SKIP_TEXT_TAGS.test(parent.tagName)) return;
         const next = translated(node.nodeValue);
         if (next !== node.nodeValue) node.nodeValue = next;
     }
@@ -105,58 +106,103 @@
 
     function translateTree(root) {
         if (!root || language === DEFAULT_LANGUAGE || !dictionary) return;
-        translating = true;
-        try {
-            if (root.nodeType === 3) {
-                translateTextNode(root);
-                return;
-            }
-            if (root.nodeType !== 1 && root.nodeType !== 9) return;
-
-            const doc = root.nodeType === 9 ? root : (root.ownerDocument || document);
-            const view = doc.defaultView || window;
-            if (root.nodeType === 1) {
-                translateAttributes(root);
-                if (root.tagName === 'IFRAME') translateIframe(root);
-            }
-            const walker = doc.createTreeWalker(root, view.NodeFilter.SHOW_ELEMENT | view.NodeFilter.SHOW_TEXT);
-            let node;
-            while ((node = walker.nextNode())) {
-                if (node.nodeType === 3) {
-                    translateTextNode(node);
-                } else {
-                    translateAttributes(node);
-                    if (node.tagName === 'IFRAME') translateIframe(node);
-                }
-            }
-        } finally {
-            translating = false;
+        if (root.nodeType === 3) {
+            translateTextNode(root);
+            return;
         }
+        if (root.nodeType !== 1 && root.nodeType !== 9) return;
+
+        const doc = root.nodeType === 9 ? root : (root.ownerDocument || document);
+        const view = doc.defaultView || window;
+        if (root.nodeType === 1) {
+            translateAttributes(root);
+            if (root.tagName === 'IFRAME') translateIframe(root);
+        }
+        const walker = doc.createTreeWalker(root, view.NodeFilter.SHOW_ELEMENT | view.NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+            if (node.nodeType === 3) {
+                translateTextNode(node);
+            } else {
+                translateAttributes(node);
+                if (node.tagName === 'IFRAME') translateIframe(node);
+            }
+        }
+    }
+
+    function pendingState(doc) {
+        let state = pendingByDocument.get(doc);
+        if (!state) {
+            state = { nodes: new Set(), scheduled: false };
+            pendingByDocument.set(doc, state);
+        }
+        return state;
+    }
+
+    function isCoveredByAnotherRoot(node, nodes) {
+        if (!node || !nodes) return false;
+        for (const other of nodes) {
+            if (other === node || !other || other.nodeType !== 1) continue;
+            try {
+                if (other.contains(node)) return true;
+            } catch (_) {}
+        }
+        return false;
+    }
+
+    function flushPending(doc) {
+        const state = pendingByDocument.get(doc);
+        if (!state) return;
+        state.scheduled = false;
+        if (language === DEFAULT_LANGUAGE || !state.nodes.size) {
+            state.nodes.clear();
+            return;
+        }
+
+        const nodes = Array.from(state.nodes);
+        state.nodes.clear();
+        nodes.forEach(function (node) {
+            if (!node || !node.isConnected || isCoveredByAnotherRoot(node, nodes)) return;
+            translateTree(node);
+        });
+    }
+
+    function queueTranslation(doc, node) {
+        if (!doc || !node || language === DEFAULT_LANGUAGE) return;
+        const state = pendingState(doc);
+        state.nodes.add(node);
+        if (state.scheduled) return;
+        state.scheduled = true;
+        const view = doc.defaultView || window;
+        const schedule = typeof view.requestAnimationFrame === 'function'
+            ? view.requestAnimationFrame.bind(view)
+            : function (cb) { return view.setTimeout(cb, 0); };
+        schedule(function () { flushPending(doc); });
     }
 
     function observeDocument(doc) {
         if (!doc || !doc.body || observers.has(doc)) return;
         const ViewMutationObserver = (doc.defaultView && doc.defaultView.MutationObserver) || MutationObserver;
         const observer = new ViewMutationObserver(function (mutations) {
-            if (translating || language === DEFAULT_LANGUAGE) return;
+            if (language === DEFAULT_LANGUAGE) return;
             mutations.forEach(function (mutation) {
                 if (mutation.type === 'characterData') {
-                    translateTextNode(mutation.target);
+                    queueTranslation(doc, mutation.target);
                     return;
                 }
-                if (mutation.type === 'attributes') {
-                    translateAttributes(mutation.target);
-                    return;
-                }
-                mutation.addedNodes.forEach(translateTree);
+                mutation.addedNodes.forEach(function (node) {
+                    queueTranslation(doc, node);
+                });
             });
         });
+        // Attribute changes are intentionally not observed. Attributes are
+        // translated during the initial/added-subtree pass. Observing our own
+        // title/placeholder writes creates avoidable feedback and heavy work on
+        // large dynamic tables.
         observer.observe(doc.body, {
             subtree: true,
             childList: true,
-            characterData: true,
-            attributes: true,
-            attributeFilter: TRANSLATABLE_ATTRIBUTES
+            characterData: true
         });
         observers.set(doc, observer);
     }
@@ -164,7 +210,16 @@
     function writeLanguage(lang) {
         if (!Object.prototype.hasOwnProperty.call(SUPPORTED, lang)) return;
         try { localStorage.setItem(STORAGE_KEY, lang); } catch (_) {}
-        window.location.reload();
+
+        // A cache-busting navigation avoids reusing an old HTML/JS shell after
+        // an Entware Manager update. Keep the rest of the current query intact.
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set('_lang', String(Date.now()));
+            window.location.replace(url.toString());
+        } catch (_) {
+            window.location.reload();
+        }
     }
 
     function languageLabel(code) {
