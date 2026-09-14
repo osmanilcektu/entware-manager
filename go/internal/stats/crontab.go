@@ -78,15 +78,19 @@ func HandleCrontabUpdate() {
 		json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "ok"})
 	case "opt", "":
 		dir := "/opt/etc"
-		os.MkdirAll(dir, 0755)
-		if err := os.WriteFile(dir+"/crontab", []byte(crontab), 0644); err != nil {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			fmt.Print("Content-type: application/json; charset=utf-8\n\n")
+			json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "error", "message": "Failed to create crontab directory"})
+			return
+		}
+		if err := cgiutil.WriteFileAtomic(dir+"/crontab", []byte(crontab), 0644); err != nil {
 			fmt.Print("Content-type: application/json; charset=utf-8\n\n")
 			json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "error", "message": "Failed to write file"})
 			return
 		}
 		if pid := findCronPID(); pid > 0 {
 			if proc, err := os.FindProcess(pid); err == nil {
-				proc.Signal(syscall.SIGHUP)
+				_ = proc.Signal(syscall.SIGHUP)
 			}
 		}
 		logCrontabAction("INFO", "Сохранён crontab (opt)")
