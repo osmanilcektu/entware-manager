@@ -20,7 +20,7 @@
 | **Файлы** | Просмотр файлов в `/tmp/`, backup/restore настроек |
 | **Терминал** | Встроенный веб-терминал (ttyd) для прямого доступа к shell |
 | **RDP** | Веб-RDP-клиент (grdpwasm) для подключения к компьютерам в LAN: доступ к любому ПК в разрешённых подсетях, клипборд, история последних 5 ПК, темизация |
-| **Безопасность** | Защита паролем (SHA-256), вход в панель по паролю (сессия, гейт на все CGI в обоих режимах), антибрутфорс |
+| **Безопасность** | Защита паролем (PBKDF2-HMAC-SHA256), вход в панель по паролю (сессия, гейт на все CGI в обоих режимах), антибрутфорс |
 
 ### Интерфейс
 
@@ -125,7 +125,7 @@ opkg remove entware-manager
 - **Задать пароль:** **Настройки → Защита панели** → «Включить защиту» и задать пароль (мин. 4 символа). Пока пароль не задан — панель открывается без входа.
 - **Вход:** при открытии панели появится окно «Введите пароль панели» → ввести пароль → «Войти».
 - Пароль также запрашивается при опасных действиях (изменение/удаление файлов, смена настроек защиты). При смене или отключении пароля все активные сессии завершаются — нужно войти заново.
-- Хэш пароля хранится в `/opt/web_entware/auth_config.json` (SHA-256).
+- Хэш пароля хранится в `/opt/web_entware/auth_config.json` (PBKDF2-HMAC-SHA256 с солью; legacy SHA-256 автоматически мигрирует после успешного входа).
 
 ### 2. Пароль терминала (вкладки «Процессы» и «Терминал»)
 
@@ -144,9 +144,9 @@ install.sh пишет лог в `/tmp/entware/install-logs/install.log` (еди�
 Финальный шаг проверяет:
 - все пакеты и бинарники
 - симлинки `.cgi → go.cgi`
-- 9 Go-бинарников
+- 11 Go-бинарников
 - веб-файлы (index.html, style.css, …)
-- lighttpd (PID + HTTP 200)
+- веб-сервер и HTTP 200 (`entware-server` в go-режиме, lighttpd в fallback-режиме)
 
 ### Бэкап конфигов
 
@@ -177,14 +177,14 @@ chmod +x install.sh
               ┌─────────┼─────────┐
               │         │         │
          entware-*   *.html    *.js
-      (10 Go-бинарн.) статика   логика
+      (11 Go-бинарн.) статика   логика
               │
          система / Entware
 ```
 
 **Запасной режим (lighttpd):** `EWM_MODE=lighttpd` перед запуском install.sh — панель через общий lighttpd (порт 8087, `go.cgi`-диспетчер). Предназначен для обратной совместимости; при следующей установке без этой переменной панель снова перейдёт на entware-server.
 
-**Технологии:** Go (10 бинарников, UPX-сжатые), POSIX `sh` (BusyBox ash), `entware-server` (собственный Go-веб-сервер) или `lighttpd` + `mod_cgi` (запасной режим), `jq`, `ttyd`.
+**Технологии:** Go (11 бинарников, UPX-сжатые), POSIX `sh` (BusyBox ash), `entware-server` (собственный Go-веб-сервер) или `lighttpd` + `mod_cgi` (запасной режим), `jq`, `ttyd`.
 
 **Перенос сервисов общего lighttpd:** при переходе на go-режим общий lighttpd переезжает на порт 8086 (если на нём живут чужие конфиги — koffe и т.п.). Пользователям таких приложений нужно один раз сменить порт в закладках (например `:8087/koffe/` → `:8086/koffe/`). Порт 8086 стабилен между версиями EM.
 
@@ -198,8 +198,10 @@ chmod +x install.sh
 | `entware-services` | Сервисы, watchdog | `check_syntax/deps`, `services`, `service_action`, `ttyd_control`, `service_watchdog/*` |
 | `entware-monitor` | Мониторинг | `temperature`, `wifi_temp`, `temp_history`, `wifi_temp_history`, `kill_pid`, `monitor_*` |
 | `entware-smart` | SMART дисков | `smart` (info, attributes, health, selftest) |
-| `entware-logger` | Логи | `logger_*` (config, view, system_logs, rotate, clear)` |
+| `entware-logger` | Логи | `logger_*` (config, view, system_logs, rotate, clear) |
 | `entware-rdp` | RDP-модуль | `rdp_status`, `rdp_config`, `rdp_start`, `rdp_stop` (управление grdp-proxy) |
+| `entware-telegram` | Telegram-уведомления и бот | `telegram_config`, `telegram_test`; режим бота `-bot` |
+| `entware-bridge` | Модули и интеграции | `bridge_*` (карточки, сканирование, действия, авторизация, статистика) |
 | `entware-server` | Веб-сервер | Статика `/entware-manager/` + `/entware-cgi/` + прокси `/rdp/`,`/ws` (режим по умолчанию) |
 
 ## Конфигурация
@@ -207,8 +209,8 @@ chmod +x install.sh
 | Файл | Описание |
 |------|----------|
 | `/opt/etc/entware-manager.conf` | Пути (генерируется install.sh): `ENTWARE_MANAGER_ROOT`, `ENTWARE_MANAGER_CGI`, `ENTWARE_MANAGER_LOGS`, `ENTWARE_MANAGER_AUTH`, `ENTWARE_MANAGER_VERSION` |
-| `/opt/web_entware/auth_config.json` | Пароль веб-панели: `{"enabled":true,"password_hash":"<sha256>"}` |
-| `/opt/web_entware/version.json` | Версия проекта: `{"version":"1.09.5","date":"2026-08-14"}` |
+| `/opt/web_entware/auth_config.json` | Пароль веб-панели: `{"enabled":true,"password_hash":"pbkdf2-sha256$<iterations>$<salt_hex>$<hash_hex>"}`; legacy 64-hex SHA-256 принимается и мигрирует после успешного входа |
+| `/opt/web_entware/version.json` | Версия проекта: `{"version":"<version>","date":"YYYY-MM-DD"}` |
 
 ## Troubleshooting
 
@@ -217,7 +219,7 @@ chmod +x install.sh
 | Port 8087 занят | `netstat -tlnp \| grep 8087` → освободить порт или изменить `.port` в `/opt/web_entware/server_config.json` |
 | `mod_cgi.so` не найден | `opkg install lighttpd-mod-cgi` |
 | CGI выдаёт 500 | Проверить `/opt/var/log/lighttpd/error.log` — часто: забыт `chmod +x`, неверный shebang, ошибка в sh |
-| Пароль не принимается | Проверить `/opt/web_entware/auth_config.json` — хэш должен быть SHA-256 |
+| Пароль не принимается | Проверить `/opt/web_entware/auth_config.json`: новый формат начинается с `pbkdf2-sha256$`; legacy 64-hex SHA-256 тоже поддерживается |
 | Файлы не отображаются | Путь должен быть под `/tmp/` (безопасность) |
 | lighttpd не стартует | `lighttpd -D -f /opt/etc/lighttpd/lighttpd.conf` — увидишь ошибку конфига |
 
@@ -232,7 +234,7 @@ cat /tmp/entware/logs/$(date +%Y-%m-%d).log
 tail -f /tmp/entware/logs/$(date +%Y-%m-%d).log
 
 # Лог установки
-cat /tmp/entware/install-logs/install-*.log
+cat /tmp/entware/install-logs/install.log
 ```
 
 ### Что смотреть при ошибках
@@ -244,7 +246,7 @@ cat /tmp/entware/install-logs/install-*.log
 | Не устанавливаются пакеты | `/tmp/entware/logs/$(date +%Y-%m-%d).log` | `opkg returned` с кодом ошибки |
 | Температура пустая / null | `/tmp/entware/logs/$(date +%Y-%m-%d).log` | `rci request failed`, `parse error`, `localhost` |
 | Сеть не отображается (пусто) | `/tmp/entware/logs/$(date +%Y-%m-%d).log` | `exec: ... failed`, `exit status` |
-| Установка прервалась | `/tmp/entware/install-logs/install-*.log` | `✗`, `fail`, `ошибка` |
+| Установка прервалась | `/tmp/entware/install-logs/install.log` | `✗`, `fail`, `ошибка` |
 | После перезагрузки не работает | `/opt/var/log/lighttpd/error.log` | `binding failed` (порт занят другим процессом) |
 
 ## Документация
