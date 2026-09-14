@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -40,6 +41,9 @@ func TestStaticWhitelistI18nAssets(t *testing.T) {
 		handleStatic(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Errorf("GET %s = %d, want 200", p, rec.Code)
+		}
+		if got := rec.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
+			t.Errorf("GET %s Cache-Control = %q, want no-store", p, got)
 		}
 	}
 
