@@ -60,6 +60,16 @@ func handleStatic(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+
+	// Locale runtime and dictionaries change independently while the i18n layer
+	// is being refined. Do not let a browser keep an older translation engine
+	// after an update or language switch.
+	if clean == "/i18n.js" || strings.HasPrefix(clean, "/locales/") {
+		w.Header().Set("Cache-Control", "no-store, max-age=0")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+	}
+
 	full := filepath.Join(webRoot, clean)
 	http.ServeFile(w, r, full)
 }
