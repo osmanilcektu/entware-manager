@@ -11,12 +11,19 @@
         en: 'English',
         tr: 'Türkçe'
     };
+    const LANGUAGE_NAMES = {
+        ru: { ru: 'Русский', en: 'English', tr: 'Türkçe' },
+        en: { ru: 'Russian', en: 'English', tr: 'Turkish' },
+        tr: { ru: 'Rusça', en: 'İngilizce', tr: 'Türkçe' }
+    };
     const TRANSLATABLE_ATTRIBUTES = ['title', 'placeholder', 'aria-label'];
+    const CYRILLIC_RE = /[\u0400-\u04FF]/;
 
     let language = DEFAULT_LANGUAGE;
     let dictionary = {};
-    let observer = null;
     let translating = false;
+    const observers = new WeakMap();
+    const observedFrames = new WeakSet();
 
     function uiBase() {
         if (typeof window.UI_BASE === 'string' && window.UI_BASE) return window.UI_BASE;
@@ -60,13 +67,15 @@
     }
 
     function translateTextNode(node) {
-        if (!node || node.nodeType !== Node.TEXT_NODE) return;
+        if (!node || node.nodeType !== 3) return;
+        const parent = node.parentElement;
+        if (parent && /^(SCRIPT|STYLE|NOSCRIPT)$/i.test(parent.tagName)) return;
         const next = translated(node.nodeValue);
         if (next !== node.nodeValue) node.nodeValue = next;
     }
 
     function translateAttributes(element) {
-        if (!element || element.nodeType !== Node.ELEMENT_NODE) return;
+        if (!element || element.nodeType !== 1) return;
         TRANSLATABLE_ATTRIBUTES.forEach(function (name) {
             if (!element.hasAttribute(name)) return;
             const current = element.getAttribute(name);
@@ -75,31 +84,60 @@
         });
     }
 
+    function translateIframe(frame) {
+        if (!frame || frame.nodeType !== 1 || frame.tagName !== 'IFRAME') return;
+        const apply = function () {
+            try {
+                const doc = frame.contentDocument;
+                if (!doc || !doc.body) return;
+                translateTree(doc);
+                observeDocument(doc);
+            } catch (_) {
+                // Cross-origin frames are intentionally ignored.
+            }
+        };
+        if (!observedFrames.has(frame)) {
+            observedFrames.add(frame);
+            frame.addEventListener('load', apply);
+        }
+        apply();
+    }
+
     function translateTree(root) {
         if (!root || language === DEFAULT_LANGUAGE || !dictionary) return;
         translating = true;
         try {
-            if (root.nodeType === Node.TEXT_NODE) {
+            if (root.nodeType === 3) {
                 translateTextNode(root);
                 return;
             }
-            if (root.nodeType !== Node.ELEMENT_NODE && root.nodeType !== Node.DOCUMENT_NODE) return;
+            if (root.nodeType !== 1 && root.nodeType !== 9) return;
 
-            if (root.nodeType === Node.ELEMENT_NODE) translateAttributes(root);
-            const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+            const doc = root.nodeType === 9 ? root : (root.ownerDocument || document);
+            const view = doc.defaultView || window;
+            if (root.nodeType === 1) {
+                translateAttributes(root);
+                if (root.tagName === 'IFRAME') translateIframe(root);
+            }
+            const walker = doc.createTreeWalker(root, view.NodeFilter.SHOW_ELEMENT | view.NodeFilter.SHOW_TEXT);
             let node;
             while ((node = walker.nextNode())) {
-                if (node.nodeType === Node.TEXT_NODE) translateTextNode(node);
-                else translateAttributes(node);
+                if (node.nodeType === 3) {
+                    translateTextNode(node);
+                } else {
+                    translateAttributes(node);
+                    if (node.tagName === 'IFRAME') translateIframe(node);
+                }
             }
         } finally {
             translating = false;
         }
     }
 
-    function observe() {
-        if (!document.body || observer) return;
-        observer = new MutationObserver(function (mutations) {
+    function observeDocument(doc) {
+        if (!doc || !doc.body || observers.has(doc)) return;
+        const ViewMutationObserver = (doc.defaultView && doc.defaultView.MutationObserver) || MutationObserver;
+        const observer = new ViewMutationObserver(function (mutations) {
             if (translating || language === DEFAULT_LANGUAGE) return;
             mutations.forEach(function (mutation) {
                 if (mutation.type === 'characterData') {
@@ -113,19 +151,25 @@
                 mutation.addedNodes.forEach(translateTree);
             });
         });
-        observer.observe(document.body, {
+        observer.observe(doc.body, {
             subtree: true,
             childList: true,
             characterData: true,
             attributes: true,
             attributeFilter: TRANSLATABLE_ATTRIBUTES
         });
+        observers.set(doc, observer);
     }
 
     function writeLanguage(lang) {
         if (!Object.prototype.hasOwnProperty.call(SUPPORTED, lang)) return;
         try { localStorage.setItem(STORAGE_KEY, lang); } catch (_) {}
         window.location.reload();
+    }
+
+    function languageLabel(code) {
+        const labels = LANGUAGE_NAMES[language] || LANGUAGE_NAMES[DEFAULT_LANGUAGE];
+        return labels[code] || SUPPORTED[code] || code;
     }
 
     function makeSelect(context) {
@@ -136,7 +180,7 @@
         Object.keys(SUPPORTED).forEach(function (code) {
             const option = document.createElement('option');
             option.value = code;
-            option.textContent = SUPPORTED[code];
+            option.textContent = languageLabel(code);
             select.appendChild(option);
         });
         select.value = language;
@@ -166,6 +210,28 @@
         }
     }
 
+    function collectCyrillic(doc, out) {
+        if (!doc || !doc.body) return;
+        const view = doc.defaultView || window;
+        const walker = doc.createTreeWalker(doc.body, view.NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+            const parent = node.parentElement;
+            if (!parent || /^(SCRIPT|STYLE|NOSCRIPT)$/i.test(parent.tagName)) continue;
+            const text = String(node.nodeValue || '').trim();
+            if (text && CYRILLIC_RE.test(text)) out.add(text);
+        }
+        doc.querySelectorAll('iframe').forEach(function (frame) {
+            try { collectCyrillic(frame.contentDocument, out); } catch (_) {}
+        });
+    }
+
+    function audit() {
+        const out = new Set();
+        collectCyrillic(document, out);
+        return Array.from(out).sort();
+    }
+
     async function initialize() {
         language = readLanguage();
         document.documentElement.lang = language;
@@ -179,7 +245,7 @@
 
         translateTree(document.body);
         addLanguageSwitchers();
-        observe();
+        observeDocument(document);
     }
 
     const ready = initialize();
@@ -193,6 +259,7 @@
             return dictionary[source] || source;
         },
         translate: translateTree,
+        audit: audit,
         supported: Object.assign({}, SUPPORTED)
     };
 })();
