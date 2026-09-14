@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"entware-manager/internal/auth"
+	"entware-manager/internal/cgiutil"
 )
 
 func HandleLinksSave() {
@@ -53,7 +54,7 @@ func HandleLinksSave() {
 		}
 	}
 
-	if err := os.WriteFile("/opt/web_entware/links.json", []byte(data), 0644); err != nil {
+	if err := cgiutil.WriteFileAtomic("/opt/web_entware/links.json", []byte(data), 0644); err != nil {
 		fmt.Print("Content-type: application/json; charset=utf-8\n\n")
 		fmt.Println(`{"status":"error","message":"Failed to write links file"}`)
 		return
