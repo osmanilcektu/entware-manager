@@ -95,5 +95,21 @@
   "Видео": "Video",
   "Погода": "Weather",
   "Замок": "Lock",
-  "Домой": "Home"
+  "Домой": "Home",
+  "Фиолетовый": "Purple",
+  "Океан": "Ocean",
+  "Изумруд": "Emerald",
+  "Бирюза": "Teal",
+  "Янтарь": "Amber",
+  "Рубин": "Ruby",
+  "Роза": "Rose",
+  "ФС": "FS",
+  "Точка монтирования": "Mount point",
+  "Очистка": "Cleanup",
+  "Блочные устройства": "Block devices",
+  "Физические порты": "Physical ports",
+  "Сети": "Networks",
+  "WiFi сети": "Wi-Fi networks",
+  "Полезные ссылки": "Useful links",
+  "Терминал (ttyd)": "Terminal (ttyd)"
 }
