@@ -12,21 +12,15 @@
         { id: 'teal',    label: 'Бирюза',     color: '#14b8a6' },
         { id: 'amber',   label: 'Янтарь',     color: '#f59e0b' },
         { id: 'ruby',    label: 'Рубин',      color: '#ef4444' },
-        { id: 'rose',    label: 'Роза',        color: '#ec4899' }
+        { id: 'rose',    label: 'Роза',       color: '#ec4899' }
     ];
 
     var STORAGE_KEY = 'entware_theme';
     var NIGHT_KEY = 'entware_night';
 
-    function readStorage(key) {
-        try { return localStorage.getItem(key); } catch (e) { return null; }
-    }
-    function writeStorage(key, val) {
-        try { localStorage.setItem(key, val); } catch (e) {}
-    }
-    function removeStorage(key) {
-        try { localStorage.removeItem(key); } catch (e) {}
-    }
+    function readStorage(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+    function writeStorage(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
+    function removeStorage(key) { try { localStorage.removeItem(key); } catch (e) {} }
 
     function migrate() {
         var v = readStorage(STORAGE_KEY);
@@ -92,8 +86,8 @@
     };
 })();
 
-// Router UI stability hotfix: serializes tab navigation and makes legacy
-// network/monitor module loading use the shared race-safe loadScript().
+// Router UI stability hotfix: serialize tab navigation and use the shared
+// race-safe dynamic loader. This is deliberately frontend-only.
 (function() {
     'use strict';
 
@@ -138,14 +132,12 @@
         }
 
         window.loadNetworkTab = async function() {
-            if (typeof initNetworkTab === 'function') {
-                initNetworkTab();
-                return;
-            }
             try {
-                await loadScript('/entware-manager/network.js?v=17');
-                if (typeof initNetworkTab !== 'function') throw new Error('network module init missing');
-                initNetworkTab();
+                if (typeof NETWORK === 'undefined') {
+                    await loadScript('/entware-manager/network.js?v=20260914-stable1');
+                }
+                if (typeof NETWORK === 'undefined' || !NETWORK.init) throw new Error('network module init missing');
+                await NETWORK.init();
             } catch (err) {
                 var target = document.getElementById('content');
                 if (target) target.innerHTML = '<p class="error">Не удалось загрузить модуль сети</p>';
@@ -154,14 +146,12 @@
         };
 
         window.loadMonitorTab = async function() {
-            if (typeof initMonitorTab === 'function') {
-                initMonitorTab();
-                return;
-            }
             try {
-                await loadScript('/entware-manager/monitor.js?v=9');
-                if (typeof initMonitorTab !== 'function') throw new Error('monitor module init missing');
-                initMonitorTab();
+                if (typeof MONITOR === 'undefined') {
+                    await loadScript('/entware-manager/monitor.js?v=20260914-stable1');
+                }
+                if (typeof MONITOR === 'undefined' || !MONITOR.init) throw new Error('monitor module init missing');
+                await MONITOR.init();
             } catch (err) {
                 var target = document.getElementById('content');
                 if (target) target.innerHTML = '<p class="error">Не удалось загрузить модуль защиты</p>';
