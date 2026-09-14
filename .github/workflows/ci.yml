@@ -21,5 +21,7 @@ jobs:
           which go tar find tee python3
       - name: Go vet
         run: cd go && go vet ./...
-      - name: Go test
-        run: cd go && go test ./...
+      - name: Project tests
+        run: make test
+      - name: JavaScript syntax
+        run: node --check entware.js
