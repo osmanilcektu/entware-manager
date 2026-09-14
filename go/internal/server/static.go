@@ -35,6 +35,24 @@ var staticWhitelist = map[string]bool{
 	"/static/rdp/wasm_exec.js":    true,
 }
 
+// setStaticCacheHeaders keeps upgrades deterministic. The HTML shell and
+// runtime metadata must never survive an update in the browser cache. JS/CSS
+// may use validators, but the browser must revalidate them before reuse.
+func setStaticCacheHeaders(w http.ResponseWriter, clean string) {
+	switch clean {
+	case "/index.html", "/version.json", "/menu/menu.json", "/rdp_config.json", "/logger/system_sources.json":
+		w.Header().Set("Cache-Control", "no-store, max-age=0")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+		return
+	}
+
+	switch strings.ToLower(filepath.Ext(clean)) {
+	case ".js", ".css":
+		w.Header().Set("Cache-Control", "no-cache, max-age=0, must-revalidate")
+	}
+}
+
 // handleStatic отдаёт файлы из белого списка под /entware-manager/.
 func handleStatic(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -56,6 +74,7 @@ func handleStatic(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	setStaticCacheHeaders(w, clean)
 	full := filepath.Join(webRoot, clean)
 	http.ServeFile(w, r, full)
 }

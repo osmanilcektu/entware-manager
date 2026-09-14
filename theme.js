@@ -44,8 +44,19 @@
         return THEMES.some(function(t) { return t.id === id; }) ? id : 'violet';
     }
 
+    function automaticNight() {
+        var h = new Date().getHours();
+        return h >= 20 || h < 6;
+    }
+
     function isNight() {
-        return readStorage(NIGHT_KEY) === '1';
+        var stored = readStorage(NIGHT_KEY);
+        if (stored === '1') return true;
+        if (stored === '0') return false;
+        // With no explicit preference, use the current automatic state. This
+        // keeps preset changes consistent and also corrects the theme if the
+        // page remained open across the day/night boundary.
+        return automaticNight();
     }
 
     function applyTheme(themeId, night) {
@@ -57,11 +68,8 @@
 
     function applyFromStorage() {
         migrate();
-        var night = isNight();
-        if (!readStorage(NIGHT_KEY)) {
-            var h = new Date().getHours();
-            night = h >= 20 || h < 6;
-        }
+        var stored = readStorage(NIGHT_KEY);
+        var night = stored === '1' ? true : stored === '0' ? false : automaticNight();
         applyTheme(currentTheme(), night);
     }
 
